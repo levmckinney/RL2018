@@ -20,6 +20,8 @@ ARG USER_GID=$USER_UID
 # copy "noop.txt" so the COPY instruction does not fail if no environment.yml exists.
 COPY environment.yml* .devcontainer/noop.txt /tmp/conda-tmp/
 
+SHELL ["/bin/bash", "-c"]
+
 # Configure apt and install packages
 RUN apt-get update \
     && apt-get -y install --no-install-recommends apt-utils dialog 2>&1 \
@@ -43,6 +45,14 @@ RUN apt-get update \
     && chmod 0440 /etc/sudoers.d/$USERNAME \
     # install ML basics
     && pip install scipy numpy autograd matplotlib jupyter sklearn \
+    # install rust
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y \
+    && echo 'source $HOME/.cargo/env' >> $HOME/.bashrc \
+    && source $HOME/.cargo/env \
+    # install evcxr
+ #   && sudo apt install -y jupyter-notebook \
+ #   && cargo install evcxr_jupyter \
+ #   && evcxr_jupyter -y --install \
     # get torch
     && conda install pytorch torchvision cudatoolkit=10.1 -c pytorch \
     # Clean up

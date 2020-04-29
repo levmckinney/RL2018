@@ -30,6 +30,9 @@ q_k(s,a) = r(s, a) + \gamma\sum_{s'}p(s'|a,s)
 $$
 
 #### exercise 4.4
+There are a few ways to go about this. The simplest way is to keep a copy of the old value function. if there has been any improvement, if the value of all sates are the same or less stop.
+
+However since the value functions are aproximate this may cause you to stop early. Thus I would use a exponential-recency weigted estimate of the change in value at each state between iterations. Then I would see if it dropped bellow some threshold $epsilon$. The weighting and epsilon would then be hyper perameters that would tune how sensitive the algorithm was to stalling.
 
 #### exercise 4.5
 Note that here the policy $\pi$ is a deterministic policy
@@ -65,3 +68,51 @@ $$
 q_{k + 1} = \sum_{r,s'}p(r,s'|s,a)(r +\gamma \max_a q_k(s',a))
 $$
 Notice this is the same as the bellman optimality operator.
+
+## 5
+### 5.5 Off policy learning
+We use importance sampling to predict the value of a policy $pi$ from data following a policy $b$.
+We have
+$$
+  v_b(s) = \mathbb{E}[G_t| S_t=s]S 
+$$
+We need $v_pi$.
+So we replace out the probability of future sequences under $b$, with the probability of future sequences under
+$pi$ by multiplying by the ratio. This ratio is 
+$$
+  \rho_{t:T-1} = \prod_{k=t}^{T-1}\frac{\pi(A_k|S_k)}{b(A_k|S_k)}
+$$
+The state transition probabilities cancel out. Thus we get that.
+$$
+  v_\pi(s) =\mathbb{E}[\rho_{t:T-1}G_t|S_t=s]
+$$
+Very nice!
+
+Considering first visit methods,
+
+*Ordinary-importance-sampling*
+
+Unbiased (i.e. has the correct expected value)  however the variance is unbounded and it is generally not preferred
+
+*Weighted-importance-sampling*
+
+biased, however the bias coverages to zero as we apply more iterations. In general this method is preferred.
+
+Both are biased for every-visit methods.
+
+#### Exercise 5.5
+TODO
+
+### 5.6
+#### Exercise 5.6
+TODO
+
+#### Exercise 5.7
+I think this has to do with the fact that the
+#### Exercise 5.8
+
+### 5.7
+#### Exercise 5.11
+It is correct since just above this we check to see if the action $A_t$ matches the greedy action. If it does not then since the policy is deterministic $pi(A_t|S_t) = 0$ and the remaining loops would not do anything. 
+#### Exercise 5.12: Racetrack (programming)
+It would be good to do this 
