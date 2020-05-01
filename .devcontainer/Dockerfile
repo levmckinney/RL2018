@@ -46,13 +46,14 @@ RUN apt-get update \
     # install ML basics
     && pip install scipy numpy autograd matplotlib jupyter sklearn \
     # install rust
+    && apt-get install -y build-essential cmake\
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y \
     && echo 'source $HOME/.cargo/env' >> $HOME/.bashrc \
     && source $HOME/.cargo/env \
     # install evcxr
- #   && sudo apt install -y jupyter-notebook \
- #   && cargo install evcxr_jupyter \
- #   && evcxr_jupyter -y --install \
+#    && sudo apt install -y jupyter-notebook \
+    && cargo install evcxr_jupyter \
+    && evcxr_jupyter --install \
     # get torch
     && conda install pytorch torchvision cudatoolkit=10.1 -c pytorch \
     # Clean up

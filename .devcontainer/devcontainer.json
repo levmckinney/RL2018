@@ -11,19 +11,20 @@
 		"python.pythonPath": "/opt/conda/bin/python",
 		"python.linting.enabled": true,
 		"python.linting.pylintEnabled": true,
-		"python.linting.pylintPath": "/opt/conda/bin/pylint"
+		"python.linting.pylintPath": "/opt/conda/bin/pylint",
+		"rust-client.rustupPath":"/root/.cargo/bin/rustup"
 	},
 
 	// Add the IDs of extensions you want installed when the container is created.
 	"extensions": [
 		"ms-python.python",
-		"ms-python.python",
 		"streetsidesoftware.code-spell-checker",
-		"yzhang.markdown-all-in-one"
-	]
+		"yzhang.markdown-all-in-one",
+		"rust-lang.rust"
+	],
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
-	// "forwardPorts": [],
+	"forwardPorts": [8888],
 
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "python --version",
