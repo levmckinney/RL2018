@@ -9,10 +9,10 @@ use std::cmp::min;
 pub struct Environment <State, Action>
     where State: Hash+Eq+Copy+Send+Sync, Action: Hash+Eq+Copy+Send+Sync {
     pub states: Vec<State>, // State set
-    pub e_reward: fn(&State, &Action) -> f64, // expected reward
+    pub rewards: Vec<i32>, // Reward set
     pub actions: fn(&State) -> Vec<Action>, // Action set
-    // state_trans it is assumed that the action will be valid given the current state
-    pub state_trans: fn(&State, &State, &Action) -> f64,
+    //dynamics it is assumed that the action will be valid given the current state
+    pub dynamics: fn(&State, &i32, &State, &Action) -> f64,
     pub gamma: f64, // Discount factor in [0, 1]
 }
 
@@ -25,7 +25,7 @@ impl <State, Action> Environment<State, Action>
         a:&Action, 
         value: &HashMap<State, f64>,
         ) -> f64{
-        let Environment{states, e_reward, actions:_, state_trans, gamma } = self;
+        let Environment{states, rewards, actions:_, dynamics, gamma } = self;
         // sweet parallelism
         states.par_iter().map(
             |next_s| -> f64 {
@@ -46,7 +46,7 @@ impl <State, Action> Environment<State, Action>
         // n is the number of iterations to stop after.
         // if n is none then the process will run until convergence
         n:Option<u64>) -> Option<(HashMap<State, Action>, HashMap<State, f64>)> {
-        let Environment{states, e_reward:_, actions, state_trans:_, gamma:_ } = self;
+        let Environment{states, rewards:_, actions, dynamics:_, gamma:_ } = self;
         let mut value: HashMap<State, f64> = HashMap::new(); 
         let mut policy: HashMap<State, Action> = HashMap::new();
 
@@ -208,45 +208,49 @@ fn dif_trunc_poisson(n:i32, lamb_1:u32, c_1:u32, lamb_2:u32, c_2: u32) -> f64{
 }
 
 pub fn car_env() -> Environment<(i32, i32), i32> {
-    let states = {
-        let mut states = Vec::new();
-        for i in 0..=20 {
-            for j in 0..=20 {
-                states.push((i,j))
-            }
-    };
-    let actions = |s| {
-        (-min(s.1, min(5, 20-s.0))..=min(s.0, min(5, 20-s.1))).collect()
-    };
-    let e_reward_map = HashMap::new();
-    let state_trans_map = HashMap::new();
-    for s in states {
-        for a in actions(s) {
-            e_reward_map.insert((s, a), {
-                10.0 * e_trunc_poisson(3.0, s.0) * e_trunc_poisson(4.0, s.1) - 2.0 * a
-            });
-            for next_s in states {
-                let mut prob = 0.0;
-                state_trans_map.insert((next_s, s, a),{
-                    let delta_cars_lot_0 = next_s.0 - s.0 - a;
-                    let delta_cars_lot_1 = next_s.1 - s.1 + a;    
-                    let temp = dif_trunc_poisson(delta_cars_lot_0, 3, 20 - s.0, 3, s.0)
-                               * dif_trunc_poisson(delta_cars_lot_1, 2, 20 - s.1, 4, s.1);
-                });
-                println!("{}", prob)
-            }
-        }
-    }
     Environment {
-        states: states
-        // expected reward
-        e_reward: |s, a| {
-
+        states: {
+            let mut states = Vec::new();
+            for i in 0..=20 {
+                for j in 0..=20 {
+                    states.push((i,j))
+                }
+            }
+            states
         },
-        actions: actions, // Action set
-        //state_trans it is assumed that the action will be valid given the current state
-        state_trans: |next_s, s, a| {
-            
+        rewards: (-10..=400).step_by(2).collect(), // Reward set
+        actions: |s| {
+            (-min(s.1, min(5, 20-s.0))..=min(s.0, min(5, 20-s.1))).collect()
+        }, // Action set
+        //dynamics it is assumed that the action will be valid given the current state
+        dynamics: |next_s, r, s, a| {
+        if (r - a*2) % 10 != 0 {
+            // this is not possible since we should have sold a natural number of cars
+            return 0.0;
+        }
+        let num_sold = (r - a*2) / 10;
+        // compute the probability
+        // sum over disjoint events
+        let mut prob = 0.0;
+        for sold_at_lot_0 in 0..=num_sold {
+            // if we assume the number of cars sold at one lot is fixed then
+            // we can compute the probability.
+            // since each one of these events are disjoint we can sum there probabilities.
+            let sold_at_lot_1 = num_sold - sold_at_lot_0;
+            let parked_lot_0 = next_s.0 + sold_at_lot_0 + a - s.0;
+            let parked_lot_1 = next_s.1 + sold_at_lot_1 - a - s.1;
+            if sold_at_lot_0 < 0 
+                || sold_at_lot_1 < 0
+                || parked_lot_0 < 0
+                || parked_lot_1 < 0 {
+                continue;
+            }
+            prob += trunc_poisson(sold_at_lot_0 as u32, 3, (s.0 - a) as u32)
+                    * trunc_poisson(sold_at_lot_1 as u32, 4, (s.1 + a) as u32)
+                    * trunc_poisson(parked_lot_0 as u32, 3, (20 + sold_at_lot_0 - s.0 + a) as u32)
+                    * trunc_poisson(parked_lot_1 as u32, 2, (20 + sold_at_lot_1 - s.1 - a) as u32)
+        }
+        prob
         },
         gamma: 0.9 // Discount factor in [0, 1]
     }
@@ -267,11 +271,11 @@ mod tests {
     }
     #[test]
     fn sum_to_one() {
-        let Environment{states, rewards, actions, dynamics, gamma:_ } = car_env();
+        let Environment{states, rewards, actions:_, dynamics, gamma:_ } = car_env();
         let prob: f64 = states.par_iter().map(
             |next_s| -> f64{
                 rewards.iter().map(
-                    |r| dynamics(next_s, r, &(0,0), &0)
+                    |r| dynamics(next_s, r, &(15,15), &5)
                 ).sum()
             }
         ).sum();
