@@ -26,6 +26,8 @@
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	"forwardPorts": [8888],
 
+	"runArgs": ["--cap-add", "SYS_ADMIN"]
+
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "python --version",
 

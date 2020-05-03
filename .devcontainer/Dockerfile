@@ -27,7 +27,7 @@ RUN apt-get update \
     && apt-get -y install --no-install-recommends apt-utils dialog 2>&1 \
     #
     # Verify git, process tools, lsb-release (common in install instructions for CLIs) installed
-    && apt-get -y install git openssh-client iproute2 procps iproute2 lsb-release \
+    && apt-get -y install git openssh-client iproute2 procps iproute2 lsb-release nano \
     #
     # Install pylint
     && /opt/conda/bin/pip install pylint \
@@ -50,10 +50,14 @@ RUN apt-get update \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y \
     && echo 'source $HOME/.cargo/env' >> $HOME/.bashrc \
     && source $HOME/.cargo/env \
+    && rustup update \
+    && rustup default stable \ 
     # install evcxr
-#    && sudo apt install -y jupyter-notebook \
     && cargo install evcxr_jupyter \
     && evcxr_jupyter --install \
+    # get benchmarking tools
+    && apt-get install -y linux-perf \
+    && cargo install inferno \
     # get torch
     && conda install pytorch torchvision cudatoolkit=10.1 -c pytorch \
     # Clean up
