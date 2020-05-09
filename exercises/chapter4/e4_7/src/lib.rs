@@ -47,7 +47,7 @@ impl <State, Action> dyn Environment<State, Action>
         start_action: Option<Action>,
         // n is the number of iterations to stop after.
         // if n is none then the process will run until convergence
-        n:Option<u64>) -> Option<(DashMap<State, Action>, DashMap<State, f64>)> {
+        n:Option<i32>) -> Option<(DashMap<State, Action>, DashMap<State, f64>)> {
         let value: DashMap<State, f64> = DashMap::new(); 
         let policy: DashMap<State, Action> = DashMap::new();
 
@@ -130,36 +130,43 @@ impl <State, Action> dyn Environment<State, Action>
             }
 
             // check for convergence
+            // policy stability
             if policy_stable {
                 println!("Policy stabilized after {} iterations.", i);
                 break;
             }
-
+            
+            // value function stability
             value_stable = true;
+            let mut max_d_value = f64::NEG_INFINITY;
             for s in self.states() {
                 let d_value_s = *d_value.get(s).unwrap();
                 let value_s = *value.get(s).unwrap();
                 let last_value_s = *last_value.get(s).unwrap();
                 let d_value_s =  d_value_s + alpha*((value_s - last_value_s) - d_value_s);
                 d_value.insert(*s, d_value_s);
+                if d_value_s.abs() > max_d_value {
+                    max_d_value = d_value_s.abs();
+                }
                 if d_value_s > epsilon {
                     value_stable = false;
                 }
             }
+
             if value_stable {
                 println!("Value stabilized after {} iterations", i + 1);
                 break;
             }
             i += 1;
-            println!("Completed {} iteration(s).", i);// just lets you know its doing something
+            println!("Completed {} iteration(s). Max recent value change {}.", i, max_d_value);
         }
         Some((policy, value))
     }
 }
 
-// Im using unsigned ints here since it makes caching simpler
+// Im using ints here since it makes caching simpler
 
-fn ln_factorial(n: u32) -> f64 {
+fn ln_factorial(n: i32) -> f64 {
     let mut total = 0.0;
     for i in 1..=n {
         total += (i as f64).ln();
@@ -167,20 +174,26 @@ fn ln_factorial(n: u32) -> f64 {
     return total;
 }
 
-fn ln_poisson(n:u32, lamb:u32) -> f64 {
+fn ln_poisson(n: i32, lamb: i32) -> f64 {
     let lamb = lamb as f64;
     let ln_prob = lamb.ln() * (n as f64) - lamb - ln_factorial(n);
     ln_prob
 }
 
-fn poisson(n:u32, lamb:u32) -> f64 {
-    ln_poisson(n, lamb).exp()
+fn poisson(n:i32, lamb: i32) -> f64 {
+    if n < 0 {
+        0.0
+    } else {
+        ln_poisson(n, lamb).exp()
+    }
 }
 
 // Truncated poisson distribution.
 // if X is poisson(lamb) then min{X, c} is truncated poisson(c, lamb)
-fn trunc_poisson(n:u32, lamb:u32, c:u32) -> f64 {
-    if n < c {
+fn trunc_poisson(n:i32, lamb:i32, c:i32) -> f64 {
+    if n < 0 {
+        0.0
+    } else if n < c {
         poisson(n, lamb)
     } else if n == c {
         let sum: f64 = (0..c).map(|i| { 
@@ -193,7 +206,7 @@ fn trunc_poisson(n:u32, lamb:u32, c:u32) -> f64 {
 }
 
 struct CachedPoisson {
-    trunc_poisson_cache: DashMap<(u32,u32,u32), f64>
+    trunc_poisson_cache: DashMap<(i32,i32,i32), f64>
 }
 
 impl CachedPoisson {
@@ -203,14 +216,14 @@ impl CachedPoisson {
         }
     }
 
-    fn trunc_poisson(&self, n:u32, lamb:u32, c:u32) -> f64 {
+    fn trunc_poisson(&self, n:i32, lamb:i32, c:i32) -> f64 {
         let prob = *self.trunc_poisson_cache
         .entry((n, lamb, c))
         .or_insert_with(|| trunc_poisson(n, lamb, c));
         prob
     }
 }
-
+// This is the environment described in example 4.2 from RL 2018
 pub struct SimpleCarEnv {
     states: Vec<(i32, i32)>,
     cache: CachedPoisson,
@@ -271,10 +284,93 @@ impl Environment<(i32, i32), i32> for SimpleCarEnv {
                 || parked_lot_1 < 0 {
                 continue;
             }
-            prob += self.cache.trunc_poisson(sold_at_lot_0 as u32, 3, (s.0 - a) as u32)
-                    * self.cache.trunc_poisson(sold_at_lot_1 as u32, 4, (s.1 + a) as u32)
-                    * self.cache.trunc_poisson(parked_lot_0 as u32, 3, (20 + sold_at_lot_0 - s.0 + a) as u32)
-                    * self.cache.trunc_poisson(parked_lot_1 as u32, 2, (20 + sold_at_lot_1 - s.1 - a) as u32);
+            prob += self.cache.trunc_poisson(sold_at_lot_0, 3, s.0 - a)
+                    * self.cache.trunc_poisson(sold_at_lot_1, 4, s.1 + a)
+                    // adding sold_at _lot may account for the decrepensy between this one and the text book
+                    * self.cache.trunc_poisson(parked_lot_0, 3, 20 + sold_at_lot_0 - s.0 + a)
+                    * self.cache.trunc_poisson(parked_lot_1, 2, 20 + sold_at_lot_1 - s.1 - a);
+        }
+        prob
+    }
+
+    fn gamma(&self) -> f64 {
+        0.9
+    }
+}
+
+// This is the environment described in exercise 4.7 in RL 2018
+pub struct MoreComplexCarEnv {
+    states: Vec<(i32, i32)>,
+    cache: CachedPoisson,
+    rewards: Vec<i32>
+}
+
+impl MoreComplexCarEnv {
+    pub fn new() -> MoreComplexCarEnv {
+        MoreComplexCarEnv {
+            states: {
+                let mut states = Vec::new();
+                for i in 0..=20 {
+                    for j in 0..=20 {
+                        states.push((i,j))
+                    }
+                }
+                states
+            },
+            cache: CachedPoisson::new(),
+            rewards: (-18..=400).step_by(2).collect()
+        }
+    }
+}
+
+impl Environment<(i32, i32), i32> for MoreComplexCarEnv {
+    fn states(&self) -> &[(i32, i32)]{
+        &self.states
+    }
+
+    fn actions(&self, s: &(i32, i32)) -> Vec<i32> {
+        let vec: Vec<i32> = (-min(s.1, min(5, 20-s.0))..=min(s.0, min(5, 20-s.1))).collect();
+        vec
+    }
+
+    fn rewards(&self) -> &[i32] {
+        &self.rewards
+    }
+
+    fn dynamics(&self, next_s: &(i32, i32), r: &i32, s: &(i32, i32), a: &i32) -> f64 {
+        let cost_of_actions = if *a > 0 {
+            2*(a - 1) // since the an employee can take one car
+        } else {
+            -a*2
+        };
+        let cost_of_storage = if s.0 > 10 {10} else {0} // cost of storage at lot 1
+            + if s.1 > 10 {10} else {0}; // cost of storage at lot 2
+        let reward_from_cars = r + cost_of_actions + cost_of_storage;
+        if reward_from_cars % 10 != 0 {
+            // this is not possible since we should have sold a natural number of cars
+            return 0.0;
+        }
+        let num_sold = reward_from_cars / 10;
+        // sum over disjoint events
+        let mut prob = 0.0;
+        for sold_at_lot_0 in 0..=num_sold {
+            // if we assume the number of cars sold at one lot is fixed then
+            // we can compute the probability.
+            // since each one of these events are disjoint we can sum their probabilities.
+            let sold_at_lot_1 = num_sold - sold_at_lot_0;
+            let parked_lot_0 = next_s.0 + sold_at_lot_0 + a - s.0;
+            let parked_lot_1 = next_s.1 + sold_at_lot_1 - a - s.1;
+            if sold_at_lot_0 < 0 
+                || sold_at_lot_1 < 0
+                || parked_lot_0 < 0
+                || parked_lot_1 < 0 {
+                continue;
+            }
+            prob += self.cache.trunc_poisson(sold_at_lot_0, 3, s.0 - a)
+                    * self.cache.trunc_poisson(sold_at_lot_1, 4, s.1 + a)
+                    // adding sold_at _lot may account for the discrepancy between this one and the text book
+                    * self.cache.trunc_poisson(parked_lot_0, 3, 20 + sold_at_lot_0 - s.0 + a)
+                    * self.cache.trunc_poisson(parked_lot_1, 2, 20 + sold_at_lot_1 - s.1 - a);
         }
         prob
     }
@@ -288,15 +384,13 @@ impl Environment<(i32, i32), i32> for SimpleCarEnv {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn sum_to_one() {
-        let env = SimpleCarEnv::new();
+    fn sum_to_one(env: &Environment<(i32, i32), i32>) {
         env.states().par_iter().for_each(|s| {
             env.actions(&s).iter().for_each(|a| {
                 println!("state {:?} and action {:?}", s, a);
                 let prob: f64 = env.states().iter().map(
                     |next_s| -> f64 {
-                        env.rewards.iter().map(
+                        env.rewards().iter().map(
                             |r| env.dynamics(next_s, r, &s, &a)
                         ).sum()
                     }
@@ -305,5 +399,14 @@ mod tests {
                     "failed for state {:?} and action {:?}", s, a)
             });
         });
+    }
+    #[test]
+    fn simple_sum_to_one() {
+        sum_to_one(&SimpleCarEnv::new());
+    }
+
+    #[test]
+    fn complex_sum_to_one() {
+        sum_to_one(&MoreComplexCarEnv::new());
     }
 }
