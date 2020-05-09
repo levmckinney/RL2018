@@ -12,7 +12,7 @@ pub trait Environment <State, Action>: Send + Sync
     fn rewards(&self) -> &[i32]; // Reward set
     fn actions(&self, state: &State) -> Vec<Action>; // Action set
     //dynamics it is assumed that the action will be valid given the current state
-    fn dynamics(&self, next_s: &State, r: &i32, s: &State, a: &Action) -> f64;
+    fn dynamics(&self, next_s: &State, r: i32, s: &State, a: &Action) -> f64;
     fn gamma(&self) -> f64; // Discount factor in [0, 1]
 }
 
@@ -31,7 +31,7 @@ impl <State, Action> dyn Environment<State, Action>
             |next_s| -> f64 {
                 self.rewards().iter().map(
                     |r| {
-                        self.dynamics(next_s, r, s, a) * ((*r as f64) + (self.gamma())*(*value.get(next_s).unwrap()))
+                        self.dynamics(next_s, *r, s, a) * ((*r as f64) + (self.gamma())*(*value.get(next_s).unwrap()))
                     }
                 ).sum()
             }
@@ -171,13 +171,12 @@ fn ln_factorial(n: i32) -> f64 {
     for i in 1..=n {
         total += (i as f64).ln();
     }
-    return total;
+    total
 }
 
 fn ln_poisson(n: i32, lamb: i32) -> f64 {
     let lamb = lamb as f64;
-    let ln_prob = lamb.ln() * (n as f64) - lamb - ln_factorial(n);
-    ln_prob
+    lamb.ln() * (n as f64) - lamb - ln_factorial(n)
 }
 
 fn poisson(n:i32, lamb: i32) -> f64 {
@@ -217,10 +216,9 @@ impl CachedPoisson {
     }
 
     fn trunc_poisson(&self, n:i32, lamb:i32, c:i32) -> f64 {
-        let prob = *self.trunc_poisson_cache
+        *self.trunc_poisson_cache
         .entry((n, lamb, c))
-        .or_insert_with(|| trunc_poisson(n, lamb, c));
-        prob
+        .or_insert_with(|| trunc_poisson(n, lamb, c))
     }
 }
 // This is the environment described in example 4.2 from RL 2018
@@ -262,7 +260,7 @@ impl Environment<(i32, i32), i32> for SimpleCarEnv {
         &self.rewards
     }
 
-    fn dynamics(&self, next_s: &(i32, i32), r: &i32, s: &(i32, i32), a: &i32) -> f64 {
+    fn dynamics(&self, next_s: &(i32, i32), r: i32, s: &(i32, i32), a: &i32) -> f64 {
         let reward_from_cars = r + a.abs()*2;
         if reward_from_cars % 10 != 0 {
             // this is not possible since we should have sold a natural number of cars
@@ -337,7 +335,7 @@ impl Environment<(i32, i32), i32> for MoreComplexCarEnv {
         &self.rewards
     }
 
-    fn dynamics(&self, next_s: &(i32, i32), r: &i32, s: &(i32, i32), a: &i32) -> f64 {
+    fn dynamics(&self, next_s: &(i32, i32), r: i32, s: &(i32, i32), a: &i32) -> f64 {
         let cost_of_actions = if *a > 0 {
             2*(a - 1) // since the an employee can take one car
         } else {
@@ -384,14 +382,14 @@ impl Environment<(i32, i32), i32> for MoreComplexCarEnv {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn sum_to_one(env: &Environment<(i32, i32), i32>) {
+    fn sum_to_one(env: &dyn Environment<(i32, i32), i32>) {
         env.states().par_iter().for_each(|s| {
             env.actions(&s).iter().for_each(|a| {
                 println!("state {:?} and action {:?}", s, a);
                 let prob: f64 = env.states().iter().map(
                     |next_s| -> f64 {
                         env.rewards().iter().map(
-                            |r| env.dynamics(next_s, r, &s, &a)
+                            |r| env.dynamics(next_s, *r, &s, &a)
                         ).sum()
                     }
                 ).sum();
