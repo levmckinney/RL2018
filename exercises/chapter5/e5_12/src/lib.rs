@@ -11,6 +11,7 @@ use std::cmp::max;
 use std::cmp::Ordering;
 use std::fmt::Debug;
 
+/// Preforms argmax as expected
 pub fn argmax<T>(over: impl Iterator<Item=T>, func: impl Fn(T) -> f64) -> Option<T> 
 where T: Copy {
    over
@@ -30,6 +31,7 @@ where T: Copy {
   .map(|(_, argmax)| argmax)
 }
 
+/// Basic monte-carlo environment
 pub trait MonteEnvironment<State, Action>:
 where State: Hash+Eq+Copy+Send+Sync+Debug,
       Action: Hash+Eq+Copy+Send+Sync+Debug {
@@ -68,17 +70,19 @@ where State: Hash+Eq+Copy+Send+Sync+Debug,
   }
 }
 
+/// An environment that provides is full state set.
 pub trait StateFull<State>:
   where State: Hash+Eq+Copy+Send+Sync {
   fn states(&self) -> &HashSet<State>; // full state set
 }
 
-// Monte carlo exploring starts
-// n being the number of episodes
-// using first visit method
+/// Monte carlo exploring starts
+/// n being the number of episodes
+/// using first visit method
 pub fn monte_carlo_es<State, Action, E>(env: &mut E, n: u32, 
   start_action: Option<Action>, 
   max_ep_len: u32,
+  default_value: f64,
   rng: &mut ThreadRng) -> (impl Fn(State) -> Option<Action>, impl Fn(State, Action) -> f64)
   where State: Hash+Eq+Copy+Send+Sync+Debug,
         Action: Hash+Eq+Copy+Send+Sync+Debug, 
@@ -86,8 +90,6 @@ pub fn monte_carlo_es<State, Action, E>(env: &mut E, n: u32,
   let mut policy: HashMap<State, Action> = HashMap::new();
 
   let mut action_value: HashMap<(State, Action), f64> = HashMap::new();
-  let default_value = -(((max_ep_len + 1)/2) as f64);
-  assert!(default_value.is_finite());
   macro_rules! q {
     ($state:expr, $action:expr) => {
       action_value.get(&($state, $action)).cloned().unwrap_or(default_value)
@@ -148,20 +150,20 @@ pub fn monte_carlo_es<State, Action, E>(env: &mut E, n: u32,
   (move |state| policy.get(&state).cloned(),
   move |state, action| q!(state, action))}
 
+/// Uses off policy monte carlo to learn the optimal greedy policy
+/// behaving according to an epsilon greedy policy.
 pub fn mc_off_policy_epsilon_greedy<State, Action>(
   env: &mut impl MonteEnvironment<State, Action>, 
   n: u32,
   epsilon: f64,
   max_ep_len: u32,
+  default_value: f64,
   rng: &mut ThreadRng) -> (impl Fn(State) -> Option<Action>, impl Fn(State, Action) -> f64)
   where State: Hash+Eq+Copy+Send+Sync+Debug,
         Action: Hash+Eq+Copy+Send+Sync+Debug {
   // Notice here we do not initialize since we do not expect to
   // explore most of the state space before stopping
   let mut action_value: HashMap<(State, Action), f64> = HashMap::new();
-  //this is approximately the value of doing nothing
-  let default_value = -(((max_ep_len + 1)/2) as f64);
-  assert!(default_value.is_finite());
   macro_rules! q {
     ($state:expr, $action:expr) => {
       action_value.get(&($state, $action)).cloned().unwrap_or(default_value);
@@ -250,14 +252,14 @@ pub fn mc_off_policy_epsilon_greedy<State, Action>(
     (move |state| greedy_policy.get(&state).cloned(),
     move |state, action| q!(state, action))
 }
+
+#[derive(Clone, PartialEq, Eq, Copy, Hash, Debug)]
+pub struct CarState {
+  position: (i32,i32),
+  velocity: (i32, i32)
+}
   
-  #[derive(Clone, PartialEq, Eq, Copy, Hash, Debug)]
-  pub struct CarState {
-    position: (i32,i32),
-    velocity: (i32, i32)
-  }
-  
-  pub struct RaceTrackEnv {
+pub struct RaceTrackEnv {
     states: HashSet<CarState>,
     end_positions: HashSet<(i32, i32)>,
     actions: HashSet<(i32, i32)>,
@@ -266,6 +268,10 @@ pub fn mc_off_policy_epsilon_greedy<State, Action>(
 }
 
 impl RaceTrackEnv {
+  /// Creates a new race track environment from an RGB image
+  /// the start line is red the track is white and the finish area is green
+  /// note that the finishing area should be more then a line since the 
+  /// car may skip over it in its final step. All other areas should be black.
   pub fn new(img: &RgbImage) -> RaceTrackEnv {
     println!("Creating race track env");
     let mut states = HashSet::new();
@@ -381,6 +387,7 @@ impl MonteEnvironment<CarState, (i32, i32)> for RaceTrackEnv {
   }
 }
 
+// plot example trajectory.
 pub fn plot_example(
   env:&mut impl MonteEnvironment<CarState, (i32, i32)>, 
   img:&mut RgbImage,

@@ -107,13 +107,15 @@ fn main() {
     };
   }
   
+  let default_value = -(((max_ep_len + 1)/2) as f64);
+  assert!(default_value.is_finite());
 
   if algo == "exploring" {
-    let (es_policy, es_value) = monte_carlo_es(&mut env, num_episodes, None, max_ep_len, &mut rng);
+    let (es_policy, es_value) = monte_carlo_es(&mut env, num_episodes, None, max_ep_len, default_value, &mut rng);
     save_example!(es_policy);
     save_value!(es_value);
   } else if algo == "off-policy" {
-    let (off_policy, off_policy_value) = mc_off_policy_epsilon_greedy(&mut env, num_episodes, epsilon, max_ep_len, &mut rng);
+    let (off_policy, off_policy_value) = mc_off_policy_epsilon_greedy(&mut env, num_episodes, epsilon, max_ep_len, default_value,  &mut rng);
     save_example!(off_policy);
     save_value!(off_policy_value);
   } else {
