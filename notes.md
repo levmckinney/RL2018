@@ -258,3 +258,6 @@ Taking a single random action is less likely to hurt the return then going on a 
 
 #### Exercise 8.5
 TODO
+
+#### Exercise 8.6
+I believe that this in general would improve sampling performance. This is because most of the weight in the expectation will be on the high probability and these states will be visited more offten. This would have the same effect as reducing the branching factor since the low probability transition would not be very relevant to the value funtion so long as non of them had lead to extream returns as to off set there low probability.
