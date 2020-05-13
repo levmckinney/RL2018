@@ -412,28 +412,40 @@ pub fn plot_example(
     }
 }
 
+#[inline]
+fn in_range(x:i32, range: (i32, i32)) -> bool {
+  range.0 <= x && x <= range.1
+}
+
 //plots the absolute value of the action value function at velocity and action
-pub fn plot_value_at_velocity(
+pub fn plot_value(
   env:&mut (impl MonteEnvironment<CarState, (i32, i32)>+StateFull<CarState>), 
   img:&mut RgbImage,
-  velocity: (i32, i32),
-  action: (i32, i32),
-  value: impl Fn(CarState, (i32, i32)) -> f64) {
-    println!("Finding relevant values to display");
-    let log_relevant_values: Vec<_> = env.states().iter().progress()
-      .filter(|s| s.velocity.0 == velocity.0 && s.velocity.1 == velocity.1)
-      .map(|s| ((*s, action), value(*s, action).abs().log10()))
-      .collect();
-    println!("{} relevant values", log_relevant_values.len());
-    let log_relevant_values: Vec<_> = log_relevant_values.iter().filter(|(_, v)| v.is_finite()).collect();
-    println!("{} relevant values that are finite", log_relevant_values.len());
-    let max_value = log_relevant_values.iter().map(|(_, v)| v)
+  x_v_range: (i32, i32),
+  y_v_range: (i32, i32),
+  action_value: impl Fn(CarState, (i32, i32)) -> f64) {
+    println!("deriving average position value");
+    let mut log_value: HashMap<(i32, i32), f64> = HashMap::new();
+    let mut updates: HashMap<(i32, i32), f64> = HashMap::new();
+    for state in env.states() {
+      for action in env.actions(state) {
+        let log_v = action_value(*state, *action);
+        let CarState {velocity:(v_x, v_y), position} = state;
+        if in_range(*v_x, x_v_range) && in_range(*v_y, y_v_range) {
+          updates.insert(*position, updates.get(&position).unwrap_or(&0.0) + 1.0);
+          log_value.insert(*position, 
+            log_value.get(position).unwrap_or(&0.0) + (1.0/updates[&position])*(log_v - log_value.get(&position).unwrap_or(&0.0))
+          );
+        }
+      }
+    }
+    let max_value = log_value.iter().map(|(_, v)| v)
       .max_by(|v1, v2| v1.partial_cmp(v2).expect("expect no nan")).unwrap_or(&0.0);
-    let min_value = log_relevant_values.iter().map(|(_, v)| v)
+    let min_value = log_value.iter().map(|(_, v)| v)
       .min_by(|v1, v2| v1.partial_cmp(v2).expect("expect no nan")).unwrap_or(&-200000.0);
-    for ((state, _), log_v) in log_relevant_values.iter() {
-      let (x,y) = state.position;
-      let intensity = ((((log_v - min_value)/max_value)) * 255.0) as u8;
-      img.put_pixel(x as u32, y as u32, Rgb([intensity, 0, 0]));
+    println!("max avg value where in the range [{}, {}]", min_value, max_value);
+    for ((x,y), avg_v) in log_value.iter() {
+      let intensity = ((((avg_v - min_value)/(max_value - min_value))) * 255.0) as u8;
+      img.put_pixel(*x as u32, *y as u32, Rgb([intensity, 0, 0]));
     }
 }

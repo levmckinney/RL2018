@@ -44,7 +44,8 @@ fn main() {
         .long("value")
         .short("v")
         .takes_value(true)
-        .value_names(&["V_X", "V_Y", "A_X", "A_Y","FILE"])
+        .allow_hyphen_values(true)
+        .value_names(&["V_X_MIN", "V_X_MAX", "V_Y_MIN", "V_Y_MAX","FILE"])
         .multiple(true)
         .number_of_values(5))
     .arg(Arg::with_name("max_ep_len")
@@ -91,14 +92,14 @@ fn main() {
       println!("Saving value");
       matches.values_of("value").map(|args| {
         let args: Vec<_> = args.collect();
-        let v_x = args[0].parse::<i32>().expect("V_X to be a integer of size 32");
-        let v_y = args[1].parse::<i32>().expect("V_Y to be a integer of size 32");
-        let a_x = args[2].parse::<i32>().expect("A_X to be a integer of size 32");
-        let a_y = args[3].parse::<i32>().expect("A_Y to be a integer of size 32");
-        println!("velocity: {:?}, acceleration(i.e. action):{:?}", (v_x, v_y), (a_x, a_y));
+        let v_x_min = args[0].parse::<i32>().expect("V_X_MIN to be a integer of size 32");
+        let v_x_max = args[1].parse::<i32>().expect("V_X_MAX to be a integer of size 32");
+        let v_y_min = args[2].parse::<i32>().expect("V_Y_MIN to be a integer of size 32");
+        let v_y_max = args[3].parse::<i32>().expect("V_Y_MAX to be a integer of size 32");
+        println!("x velocity range: {:?}, acceleration(i.e. action):{:?}", (v_x_min,v_x_max), (v_y_min, v_y_max));
         let mut value_img = image::RgbImage::new(race_track_img.width(), race_track_img.height());
 
-        plot_value_at_velocity(&mut env, &mut value_img, (v_x, v_y), (a_x, a_y), $value);
+        plot_value(&mut env, &mut value_img, (v_x_min,v_x_max), (v_y_min, v_y_max), $value);
         value_img.save(args[4]).expect(
           "to be able to save"
         );
