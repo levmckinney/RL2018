@@ -49,6 +49,7 @@ RUN apt-get update \
     && apt-get install -y build-essential cmake\
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y \
     && echo 'source $HOME/.cargo/env' >> $HOME/.bashrc \
+    && echo 'source $HOME/.cargo/env' >> $HOME/.profile \
     && source $HOME/.cargo/env \
     && rustup update \
     && rustup default stable \ 
