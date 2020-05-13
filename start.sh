@@ -14,7 +14,7 @@ case $i in
   --cap-add SYS_ADMIN \
   --entrypoint /bin/bash \
   $container_name \
-  -c "cd workspaces/RL2018 && jupyter notebook --port=8888 --no-browser --ip=0.0.0.0 --allow-root"
+  -c "source ~/.cargo/env && cd workspaces/RL2018 && jupyter notebook --port=8888 --no-browser --ip=0.0.0.0 --allow-root"
   ;;
 esac
 done
