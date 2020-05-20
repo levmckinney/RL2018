@@ -22,47 +22,70 @@ fn main() {
        .value_name("FILE")
        .required(false))
   .arg(Arg::with_name("num_episodes")
-       .help("Number of episodes to simulate")
-       .long("num_episodes")
-       .short("n")
-       .takes_value(true)
-       .value_name("NUMBER")
-       .required(true)
-      )
-   .arg(Arg::with_name("algo")
-       .short("a")
-       .long("algo")
-       .value_name("exploring | off-policy")
-       .default_value("off-policy")
-       .takes_value(true)
-      )
-    .arg(Arg::with_name("epsilon")
-        .long("epsilon")
-        .default_value("0.1")
-        .takes_value(true)
-        .value_name("NUM IN [0,1]"))
-    .arg(Arg::with_name("value")
-        .long("value")
-        .short("v")
-        .takes_value(true)
-        .allow_hyphen_values(true)
-        .value_names(&["V_X_MIN", "V_X_MAX", "V_Y_MIN", "V_Y_MAX","FILE"])
-        .multiple(true)
-        .number_of_values(5))
-    .arg(Arg::with_name("max_ep_len")
+      .help("Number of episodes to simulate")
+      .long("num_episodes")
+      .short("n")
+      .takes_value(true)
+      .value_name("NUMBER")
+      .required(true))
+  .arg(Arg::with_name("algo")
+      .short("a")
+      .long("algo")
+      .value_name("exploring | off-policy")
+      .default_value("off-policy")
+      .takes_value(true))
+  .arg(Arg::with_name("epsilon")
+      .long("epsilon")
+      .default_value("0.1")
+      .takes_value(true)
+      .value_name("NUM IN [0,1]"))
+  .arg(Arg::with_name("value")
+      .long("value")
+      .short("v")
+      .takes_value(true)
+      .allow_hyphen_values(true)
+      .value_names(&["V_X_MIN", "V_X_MAX", "V_Y_MIN", "V_Y_MAX","FILE"])
+      .number_of_values(5))
+  .arg(Arg::with_name("max_ep_len")
       .long("max_ep_len")
       .default_value("10000000")
       .takes_value(true)
       .value_name("NAT NUM"))
-    .arg(Arg::with_name("seed")
-    .long("seed")
-    .short("s")
-    .takes_value(true))
+  .arg(Arg::with_name("seed")
+      .long("seed")
+      .short("s")
+      .takes_value(true))
+  .arg(Arg::with_name("no-stop")
+      .long("no-stop")
+      .takes_value(false))
+  .arg(Arg::with_name("skid-prob")
+      .long("skid-prob")
+      .short("sp")
+      .takes_value(true)
+      .value_name("NUM IN [0,1]")
+      .default_value("0.1"))
+  .arg(Arg::with_name("vel-limits")
+      .long("vel-limits")
+      .allow_hyphen_values(true)
+      .short("vl")
+      .number_of_values(4)
+      .value_names(&["V_X_MIN", "V_X_MAX", "V_Y_MIN", "V_Y_MAX"]))
   .get_matches();
 
   let race_track_path = matches.value_of("track").unwrap();
   let mut race_track_img = image::open(race_track_path).expect("file to exist").to_rgb();
-  let mut env = RaceTrackEnv::new(&race_track_img);
+  let vel_limits = matches.values_of("vel-limits").map(|limits_strs| {
+    let limits_strs: Vec<_> = limits_strs.collect();
+    ((limits_strs[0].parse::<i32>().expect("V_X_MIN to be a num"),
+    limits_strs[1].parse::<i32>().expect("V_X_MAX to be a num")),
+    (limits_strs[2].parse::<i32>().expect("V_Y_MIN to be a num"),
+    limits_strs[3].parse::<i32>().expect("V_Y_MAX to be a num")))
+  });
+  let skid_prob = matches.value_of("skid-prob").unwrap().parse::<f64>().unwrap();
+  let mut env = RaceTrackEnv::new(&race_track_img, 
+    vel_limits, 
+    matches.values_of("no-stop").is_some(),
+    skid_prob);
   let num_episodes = matches.value_of("num_episodes")
                             .unwrap()
                             .parse::<u32>()
@@ -85,21 +108,21 @@ fn main() {
 
   macro_rules! save_example {
     ($policy:expr, $value:expr) => {
-      println!("Saving example");
       matches.value_of("example").map(|example_path| {
+        println!("Saving example");
         plot_example(&mut env, &mut race_track_img, $value, $policy, max_ep_len, &mut rng);
           race_track_img.save(example_path).expect(
           "to be able to save"
         );
+        println!("Complete!");
       });
-      println!("Complete!");
     };
   }
 
   macro_rules! save_value {
     ($value:expr) => {
-      println!("Saving value");
       matches.values_of("value").map(|args| {
+        println!("Saving value");
         let args: Vec<_> = args.collect();
         let v_x_min = args[0].parse::<i32>().expect("V_X_MIN to be a integer of size 32");
         let v_x_max = args[1].parse::<i32>().expect("V_X_MAX to be a integer of size 32");
@@ -112,8 +135,8 @@ fn main() {
         value_img.save(args[4]).expect(
           "to be able to save"
         );
+        println!("Complete!");
       });
-      println!("Complete!");
     };
   }
   

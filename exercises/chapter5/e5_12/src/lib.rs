@@ -17,6 +17,16 @@ type Map<K, V> = IndexMap<K, V>;
 // How recently waited the progress bar is.
 const BAR_RECENCY: f64 = 0.001;
 
+#[inline]
+fn in_range(x:i32, range: (i32, i32)) -> bool {
+  range.0 <= x && x <= range.1
+}
+
+#[inline]
+fn in_range_vec(v:(i32, i32), limits: ((i32, i32),(i32, i32))) -> bool {
+  in_range(v.0, limits.0) && in_range(v.1, limits.1)
+}
+
 /// Preforms argmax as expected
 pub fn argmax<T>(over: impl Iterator<Item=T>, func: impl Fn(T) -> f64) -> Option<T> 
 where T: Copy {
@@ -42,7 +52,7 @@ pub trait MonteEnvironment<State, Action>:
 where State: Hash+Eq+Copy+Send+Sync+Debug,
       Action: Hash+Eq+Copy+Send+Sync+Debug {
   fn start_states(&self) -> &Set<State>; // start states
-  fn actions(&self, state: &State) -> &Set<Action>; // Action set
+  fn actions(&self, state: &State) -> Set<Action>; // Action set
   fn next_state(&self, s:State, a:Action, rng: &mut StdRng) -> (f64, Option<State>);
   fn gamma(&self) -> f64; // Discount factor in [0, 1]
 
@@ -293,10 +303,12 @@ pub struct CarState {
   
 pub struct RaceTrackEnv {
     states: Set<CarState>,
+    no_stopping: bool,
+    vel_limits: ((i32, i32),(i32, i32)),
     end_positions: Set<(i32, i32)>,
     actions: Set<(i32, i32)>,
     start_states: Set<CarState>,
-  velocity_freeze: Bernoulli
+    velocity_freeze: Bernoulli
 }
 
 impl RaceTrackEnv {
@@ -304,7 +316,10 @@ impl RaceTrackEnv {
   /// the start line is red the track is white and the finish area is green
   /// note that the finishing area should be more then a line since the 
   /// car may skip over it in its final step. All other areas should be black.
-  pub fn new(img: &RgbImage) -> RaceTrackEnv {
+  pub fn new(img: &RgbImage, 
+    vel_limits: Option<((i32, i32),(i32, i32))>,
+    no_stopping: bool,
+    skid_prob: f64) -> RaceTrackEnv {
     println!("Creating race track env");
     let mut states = Set::new();
     let mut end_positions = Set::new();
@@ -316,18 +331,21 @@ impl RaceTrackEnv {
       }
     }
     let dims = img.dimensions();
-    let max_vel = {
-      let mut p = 0; let mut v = 0; 
-      while p < max(dims.0, dims.1) {
-        v += 1;
-        p += v;
-      }
-      v
-    } as i32;
-    println!("max velocity {}", max_vel);
+    let vel_limits = vel_limits.unwrap_or_else(|| {
+      let max_vel = {
+        let mut p = 0; let mut v = 0; 
+        while p < max(dims.0, dims.1) {
+          v += 1;
+          p += v;
+        }
+        v
+      } as i32;
+      ((-max_vel, max_vel), (-max_vel, max_vel))
+    });
+    println!("velocity limits {:?}", vel_limits);
     let mut add_states_at = |position: (i32, i32)| {
-      for v_x in -max_vel..=max_vel {
-        for v_y in -max_vel..=max_vel {
+      for v_x in (vel_limits.0 .0)..=(vel_limits.0 .1) {
+        for v_y in (vel_limits.1 .0)..=(vel_limits.1 .1) {
           states.insert(CarState {
             position, velocity: (v_x, v_y)
           });
@@ -371,11 +389,13 @@ impl RaceTrackEnv {
     }
     println!("There are a total of {} states", states.len());
     RaceTrackEnv {
+      no_stopping,
+      vel_limits,
       start_states,
       states,
       actions,
       end_positions,
-      velocity_freeze: Bernoulli::new(0.1).unwrap()
+      velocity_freeze: Bernoulli::new(skid_prob).unwrap()
     }
   }
 }
@@ -387,14 +407,24 @@ impl StateFull<CarState> for RaceTrackEnv {
   }
 }
 
+
+
 impl MonteEnvironment<CarState, (i32, i32)> for RaceTrackEnv {
-  fn actions(&self, _: &CarState) ->  &Set<(i32,i32)>{
-    &self.actions
+  fn actions(&self, s: &CarState) ->  Set<(i32,i32)>{
+    //only allow action that stay will make the car stay within the max vel limits.
+    // and if no stopping is enabled not allow it to stop.
+    self.actions.iter().cloned().filter(|a|{
+      let new_v = (s.velocity.0 + a.0, s.velocity.1 + a.1);
+      (!self.no_stopping || new_v != (0,0))
+      && in_range_vec(new_v, self.vel_limits)
+    }).collect()
   }
+
   fn start_states(&self) -> &Set<CarState> { 
     &self.start_states
   }
   fn gamma(&self) -> f64 { 1.0 }
+
 
   fn next_state(&self, s:CarState, a:(i32, i32), rng: &mut StdRng) -> (f64, Option<CarState>) {
     //update velocity
@@ -403,6 +433,7 @@ impl MonteEnvironment<CarState, (i32, i32)> for RaceTrackEnv {
     } else {
       (s.velocity.0 + a.0, s.velocity.1 + a.1)
     };
+    // We don't have to clamp the velocity here since it is done in the action set.
     // update position
     let new_p = (new_v.0 + s.position.0, new_v.1 + s.position.1);
     let new_s = CarState {
@@ -428,7 +459,8 @@ pub fn plot_example(
   max_ep_len: u32,
   rng: &mut StdRng) {
     let policy_rng = |state: CarState, rng: &mut StdRng| {
-      let action_value_tuples: Vec<_> = env.actions(&state).iter().map(|a| (a, action_value(state, *a))).collect();
+      let actions = env.actions(&state);
+      let action_value_tuples: Vec<_> = actions.iter().map(|a| (a, action_value(state, *a))).collect();
       println!("state {:?}, action_values {:?}", state, action_value_tuples);
       policy(state).unwrap_or_else(|| {
         println!("encountered new state {:?} not seen in simulations\n taking random action", state);
@@ -449,11 +481,6 @@ pub fn plot_example(
     }
 }
 
-#[inline]
-fn in_range(x:i32, range: (i32, i32)) -> bool {
-  range.0 <= x && x <= range.1
-}
-
 //plots the absolute value of the action value function at velocity and action
 pub fn plot_value(
   env:&mut (impl MonteEnvironment<CarState, (i32, i32)>+StateFull<CarState>), 
@@ -466,7 +493,7 @@ pub fn plot_value(
     let mut updates: Map<(i32, i32), f64> = Map::new();
     for state in env.states() {
       for action in env.actions(state) {
-        let log_v = action_value(*state, *action);
+        let log_v = action_value(*state, action);
         let CarState {velocity:(v_x, v_y), position} = state;
         if in_range(*v_x, x_v_range) && in_range(*v_y, y_v_range) {
           updates.insert(*position, updates.get(position).unwrap_or(&0.0) + 1.0);
