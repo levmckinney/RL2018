@@ -12,7 +12,9 @@
 		"python.linting.enabled": true,
 		"python.linting.pylintEnabled": true,
 		"python.linting.pylintPath": "/opt/conda/bin/pylint",
-		"rust-client.rustupPath":"/root/.cargo/bin/rustup"
+		"rust-client.rustupPath":"/root/.cargo/bin/rustup",
+		//This can interfere with jupiter
+		"python.dataScience.enabled":false
 	},
 
 	// Add the IDs of extensions you want installed when the container is created.
